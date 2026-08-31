@@ -14,18 +14,31 @@ Prueba minima de SharePoint Framework (SPFx) para entender el ciclo de desarroll
 
 El Web Part **VGM - Prueba SPFx** muestra una tarjeta de bienvenida, el nombre del sitio actual y un boton que cambia un mensaje en pantalla.
 
-## Desarrollo local
+## Primera ejecucion en macOS
+
+Comprueba primero que estas usando Node 22:
+
+```bash
+node -v
+```
+
+Luego, desde la carpeta del proyecto:
 
 ```bash
 npm install
+npx heft trust-dev-cert
 npm start
 ```
 
-El servidor de desarrollo usa el SharePoint Workbench. Si no se abre automaticamente, entra a:
+`trust-dev-cert` solo es necesario la primera vez que preparas SPFx en ese equipo.
+
+El proyecto esta configurado para abrir el SharePoint Workbench de VGM:
 
 ```text
-https://TU-TENANT.sharepoint.com/_layouts/15/workbench.aspx
+https://vgmconsultants.sharepoint.com/_layouts/15/workbench.aspx
 ```
+
+En el selector de Web Parts busca **VGM - Prueba SPFx** y agregalo a la pagina.
 
 ## Generar paquete para SharePoint
 
