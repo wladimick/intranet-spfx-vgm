@@ -1,0 +1,41 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "intranet-spfx-vgm-client-side-solution",
+    "title": "Intranet SPFx VGM",
+    "id": "007de981-2878-4172-b47c-dd8925f8cacd",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "Tibox",
+      "websiteUrl": "https://www.tibox.cl",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.2"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "Prueba minima de SPFx para VGM"
+      },
+      "longDescription": {
+        "default": "Web Part sencillo para validar el ciclo de desarrollo, despliegue y actualizacion de SPFx en SharePoint Online."
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "Intranet SPFx VGM Feature",
+        "description": "Componentes de la prueba SPFx de VGM",
+        "id": "9220b24b-9ef5-4ef9-b758-66ae5432689a",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/intranet-spfx-vgm.sppkg"
+  }
+}

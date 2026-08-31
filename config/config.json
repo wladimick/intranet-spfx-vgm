@@ -1,0 +1,16 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "vgm-demo-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/vgmDemo/VgmDemoWebPart.js",
+          "manifest": "./src/webparts/vgmDemo/VgmDemoWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {}
+}

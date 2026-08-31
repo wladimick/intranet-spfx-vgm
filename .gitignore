@@ -1,0 +1,10 @@
+node_modules/
+lib/
+temp/
+dist/
+coverage/
+.heft/
+.rushstack/
+*.log
+.DS_Store
+sharepoint/solution/*.sppkg
