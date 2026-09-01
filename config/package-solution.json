@@ -2,11 +2,11 @@
   "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
   "solution": {
     "name": "intranet-spfx-vgm-client-side-solution",
-    "title": "Intranet SPFx VGM",
+    "title": "TIBOX HUB Intranet",
     "id": "007de981-2878-4172-b47c-dd8925f8cacd",
-    "version": "1.0.0.0",
+    "version": "1.0.0.1",
     "includeClientSideAssets": true,
-    "skipFeatureDeployment": true,
+    "skipFeatureDeployment": false,
     "isDomainIsolated": false,
     "developer": {
       "name": "Tibox",
@@ -17,10 +17,10 @@
     },
     "metadata": {
       "shortDescription": {
-        "default": "Prueba minima de SPFx para VGM"
+        "default": "Prototipo de la intranet TIBOX HUB"
       },
       "longDescription": {
-        "default": "Web Part sencillo para validar el ciclo de desarrollo, despliegue y actualizacion de SPFx en SharePoint Online."
+        "default": "Prototipo navegable de TIBOX HUB empaquetado como Web Part SPFx para validar la experiencia dentro de SharePoint Online."
       },
       "screenshotPaths": [],
       "videoUrl": "",
@@ -28,10 +28,10 @@
     },
     "features": [
       {
-        "title": "Intranet SPFx VGM Feature",
-        "description": "Componentes de la prueba SPFx de VGM",
+        "title": "TIBOX HUB Intranet Feature",
+        "description": "Componentes de la intranet TIBOX HUB",
         "id": "9220b24b-9ef5-4ef9-b758-66ae5432689a",
-        "version": "1.0.0.0"
+        "version": "1.0.0.1"
       }
     ]
   },
