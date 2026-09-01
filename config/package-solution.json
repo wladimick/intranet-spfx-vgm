@@ -4,7 +4,7 @@
     "name": "intranet-spfx-vgm-client-side-solution",
     "title": "TIBOX HUB Intranet",
     "id": "007de981-2878-4172-b47c-dd8925f8cacd",
-    "version": "1.0.0.3",
+    "version": "1.0.0.4",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
@@ -17,21 +17,31 @@
     },
     "metadata": {
       "shortDescription": {
-        "default": "Intranet TIBOX HUB conectada a listas SharePoint"
+        "default": "Intranet TIBOX HUB conectada a SharePoint y Microsoft 365"
       },
       "longDescription": {
-        "default": "TIBOX HUB aprovisiona y consume listas SharePoint del sitio para personas, movimientos, cursos, beneficios, eventos, aprendizaje y noticias."
+        "default": "TIBOX HUB consume listas SharePoint del sitio e integra Microsoft Graph para fotos de colaboradores y disponibilidad de la Sala de reuniones Tibox."
       },
       "screenshotPaths": [],
       "videoUrl": "",
       "categories": []
     },
+    "webApiPermissionRequests": [
+      {
+        "resource": "Microsoft Graph",
+        "scope": "ProfilePhoto.Read.All"
+      },
+      {
+        "resource": "Microsoft Graph",
+        "scope": "Calendars.ReadBasic"
+      }
+    ],
     "features": [
       {
         "title": "TIBOX HUB Intranet Feature",
         "description": "Componentes de la intranet TIBOX HUB",
         "id": "9220b24b-9ef5-4ef9-b758-66ae5432689a",
-        "version": "1.0.0.3"
+        "version": "1.0.0.4"
       }
     ]
   },
