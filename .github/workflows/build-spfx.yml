@@ -33,6 +33,13 @@ jobs:
       - name: Verify package
         run: test -f sharepoint/solution/intranet-spfx-vgm.sppkg
 
+      - name: Upload SPFx package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tibox-hub-spfx-package
+          path: sharepoint/solution/intranet-spfx-vgm.sppkg
+          if-no-files-found: error
+
       - name: Commit generated package
         run: |
           git config user.name "github-actions[bot]"
