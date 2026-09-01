@@ -1,1 +1,1 @@
-export { default } from './TiboxHubWebPart';
+export { default } from './TiboxHubGraphWebPart';
