@@ -1,0 +1,47 @@
+name: Build SPFx package
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'sharepoint/solution/intranet-spfx-vgm.sppkg'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and package SPFx
+        run: npm run build
+
+      - name: Verify package
+        run: test -f sharepoint/solution/intranet-spfx-vgm.sppkg
+
+      - name: Commit generated package
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f sharepoint/solution/intranet-spfx-vgm.sppkg
+          if git diff --cached --quiet; then
+            echo "Package unchanged"
+          else
+            git commit -m "Build SPFx package [skip ci]"
+            git push
+          fi
