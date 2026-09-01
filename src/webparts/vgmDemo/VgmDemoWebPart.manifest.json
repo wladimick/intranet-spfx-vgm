@@ -12,9 +12,9 @@
     {
       "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
       "group": { "default": "Other" },
-      "title": { "default": "VGM - Prueba SPFx" },
-      "description": { "default": "Web Part sencillo para comprobar que SPFx funciona correctamente." },
-      "officeFabricIconFontName": "Code",
+      "title": { "default": "TIBOX HUB" },
+      "description": { "default": "Prototipo navegable de la intranet TIBOX HUB." },
+      "officeFabricIconFontName": "Home",
       "properties": {}
     }
   ]
