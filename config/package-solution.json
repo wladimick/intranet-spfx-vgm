@@ -4,7 +4,7 @@
     "name": "intranet-spfx-vgm-client-side-solution",
     "title": "TIBOX HUB Intranet",
     "id": "007de981-2878-4172-b47c-dd8925f8cacd",
-    "version": "1.0.0.2",
+    "version": "1.0.0.3",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
@@ -17,10 +17,10 @@
     },
     "metadata": {
       "shortDescription": {
-        "default": "Prototipo de la intranet TIBOX HUB"
+        "default": "Intranet TIBOX HUB conectada a listas SharePoint"
       },
       "longDescription": {
-        "default": "Prototipo navegable de TIBOX HUB empaquetado como Web Part SPFx para validar la experiencia dentro de SharePoint Online."
+        "default": "TIBOX HUB aprovisiona y consume listas SharePoint del sitio para personas, movimientos, cursos, beneficios, eventos, aprendizaje y noticias."
       },
       "screenshotPaths": [],
       "videoUrl": "",
@@ -31,7 +31,7 @@
         "title": "TIBOX HUB Intranet Feature",
         "description": "Componentes de la intranet TIBOX HUB",
         "id": "9220b24b-9ef5-4ef9-b758-66ae5432689a",
-        "version": "1.0.0.2"
+        "version": "1.0.0.3"
       }
     ]
   },
