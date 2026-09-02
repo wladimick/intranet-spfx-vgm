@@ -13,8 +13,13 @@ export type FinancialNewsItem = { title: string; summary: string; category: stri
 
 export default class VgmDataService {
   public static readonly sourceWebUrl: string = 'https://vgmconsultants.sharepoint.com/sites/intranet';
+  private readonly issues: string[] = [];
 
   public constructor(private readonly spHttpClient: SPHttpClient) {}
+
+  public getIssues(): string[] {
+    return this.issues.slice();
+  }
 
   public async getMenu(): Promise<MenuItem[]> {
     const items: LegacyItem[] = await this.getListItems('Menú Principal', '$orderby=Ubicacion asc&$top=100');
@@ -29,19 +34,34 @@ export default class VgmDataService {
   }
 
   public async getBirthdays(): Promise<BirthdayItem[]> {
-    const items: LegacyItem[] = await this.getListItems('Contactos', '$top=1000&$orderby=field_3 asc');
-    return items.map((item: LegacyItem) => ({
-      name: this.text(item.Title),
-      email: this.text(item.field_1),
-      area: this.text(item.field_2),
-      date: this.date(item.field_3)
+    // La portada histórica consume la lista Contactos. No ordenamos por un campo interno
+    // específico para evitar que un nombre interno distinto deje el bloque completo vacío.
+    const items: LegacyItem[] = await this.getListItems('Contactos', '$top=1000');
+    return items.map((item: LegacyItem): BirthdayItem => ({
+      name: this.firstText(item, ['Title', 'Nombre', 'NombreCompleto']),
+      email: this.firstText(item, ['field_1', 'Email', 'EMail', 'Correo', 'CorreoElectronico']),
+      area: this.firstText(item, ['field_2', 'Area', 'Área', 'Departamento', 'Unidad']),
+      date: this.date(this.firstValue(item, [
+        'field_3',
+        'Cumpleanos',
+        'Cumple_x00f1_os',
+        'FechaCumpleanos',
+        'Fecha_x0020_Cumpleanos',
+        'Fecha_x0020_de_x0020_cumpleanos',
+        'FechaNacimiento',
+        'Birthday'
+      ]))
     })).filter((item: BirthdayItem) => Boolean(item.name && item.date));
   }
 
   public async getEvents(): Promise<EventItem[]> {
+    // Misma fuente/consulta usada por la intranet histórica.
     const now: string = new Date().toISOString();
     const items: LegacyItem[] = await this.getListItems('Calendario', `$filter=Start ge datetime'${now}'&$orderby=Start asc&$top=10`);
-    return items.map((item: LegacyItem) => ({ title: this.text(item.Title), start: this.date(item.Start) }));
+    return items.map((item: LegacyItem) => ({
+      title: this.text(item.Title),
+      start: this.date(item.Start)
+    })).filter((item: EventItem) => Boolean(item.title && item.start));
   }
 
   public async getInternalNews(): Promise<NewsItem[]> {
@@ -78,7 +98,8 @@ export default class VgmDataService {
         .filter((file: LegacyItem) => /\.(jpg|jpeg|png|gif|webp)$/i.test(this.text(file.Name)))
         .map((file: LegacyItem) => this.text(file.ServerRelativeUrl));
       return { title: this.text(folder.Name), images };
-    } catch {
+    } catch (error) {
+      this.recordIssue('Galería', error);
       return undefined;
     }
   }
@@ -96,7 +117,7 @@ export default class VgmDataService {
   public async getIndicators(): Promise<IndicatorItem[]> {
     try {
       const response: Response = await fetch('https://mindicador.cl/api');
-      if (!response.ok) return [];
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data: Record<string, unknown> = await response.json() as Record<string, unknown>;
       const defs: Array<[string,string,string]> = [
         ['uf','UF','$'], ['utm','UTM','$'], ['dolar','Dólar','$'], ['euro','Euro','$'],
@@ -110,26 +131,33 @@ export default class VgmDataService {
           : '–';
         return { key, label, value: formatted };
       });
-    } catch {
+    } catch (error) {
+      this.recordIssue('Indicadores', error);
       return [];
     }
   }
 
   public async getFinancialNews(): Promise<FinancialNewsItem[]> {
     try {
-      const response: Response = await fetch('https://tiboxrssreader.azurewebsites.net/api/rss/df', { method: 'POST' });
-      if (!response.ok) return [];
+      // Replica la llamada que usa funciones-intranet.js de la portada histórica.
+      const response: Response = await fetch('https://tiboxrssreader.azurewebsites.net/api/rss/df', {
+        method: 'POST',
+        headers: { Accept: 'application/json;odata=verbose' },
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const raw: string = await response.text();
       const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
+      if (!Array.isArray(parsed)) throw new Error('La respuesta no contiene un arreglo de noticias');
       return parsed.slice(0, 4).map((item: LegacyItem) => ({
         title: this.text(item.title),
         summary: this.stripHtml(this.text(item.description)).slice(0, 140),
         category: this.text(item.category),
         link: this.text(item.link),
         image: this.text(item.enclosure)
-      }));
-    } catch {
+      })).filter((item: FinancialNewsItem) => Boolean(item.title && item.link));
+    } catch (error) {
+      this.recordIssue('Diario Financiero', error);
       return [];
     }
   }
@@ -156,7 +184,8 @@ export default class VgmDataService {
       const escaped: string = title.replace(/'/g, "''");
       const payload: { value?: LegacyItem[] } = await this.getJson(`${VgmDataService.sourceWebUrl}/_api/web/lists/getbytitle('${escaped}')/items?${query}`);
       return payload.value || [];
-    } catch {
+    } catch (error) {
+      this.recordIssue(`Lista ${title}`, error);
       return [];
     }
   }
@@ -167,6 +196,27 @@ export default class VgmDataService {
     });
     if (!response.ok) throw new Error(`SharePoint ${response.status}: ${url}`);
     return response.json() as Promise<{ value?: LegacyItem[] }>;
+  }
+
+  private recordIssue(source: string, error: unknown): void {
+    const detail: string = error instanceof Error ? error.message : String(error || 'Error desconocido');
+    const message: string = `${source}: ${detail}`;
+    this.issues.push(message);
+    console.warn(`VGM Intranet - ${message}`);
+  }
+
+  private firstValue(item: LegacyItem, candidates: string[]): unknown {
+    for (const candidate of candidates) {
+      const value: unknown = item[candidate];
+      if (value !== undefined && value !== null && value !== '') return value;
+    }
+    const normalizedCandidates: string[] = candidates.map((candidate: string) => this.simplify(candidate));
+    const key: string | undefined = Object.keys(item).find((itemKey: string) => normalizedCandidates.indexOf(this.simplify(itemKey)) !== -1);
+    return key ? item[key] : undefined;
+  }
+
+  private firstText(item: LegacyItem, candidates: string[]): string {
+    return this.text(this.firstValue(item, candidates));
   }
 
   private newsImage(item: LegacyItem, id: number): string {
