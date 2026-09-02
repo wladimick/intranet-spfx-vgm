@@ -2,6 +2,7 @@ import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
 
 export type VgmConfigModuleKey = 'calendar' | 'birthdays' | 'financial' | 'news' | 'indicators' | 'gallery' | 'links' | 'personal' | 'recentDocuments' | 'activityClients' | 'activityAreas';
 export type VgmActivityModuleKey = 'recentDocuments' | 'activityClients' | 'activityAreas';
+export type VgmQuickLinkConfig = { title: string; url: string };
 
 export type VgmAppearanceConfig = {
   primaryColor: string;
@@ -16,6 +17,7 @@ export type VgmPortalConfig = {
   appearance: VgmAppearanceConfig;
   modules: Record<VgmConfigModuleKey, boolean>;
   activityOrder: VgmActivityModuleKey[];
+  quickLinks: VgmQuickLinkConfig[];
   customCss: string;
 };
 
@@ -45,6 +47,7 @@ export const DEFAULT_VGM_CONFIG: VgmPortalConfig = {
     activityAreas: true
   },
   activityOrder: ['recentDocuments','activityClients','activityAreas'],
+  quickLinks: [],
   customCss: ''
 };
 
@@ -67,9 +70,9 @@ export default class VgmAdminConfigService {
     } catch { /* fallback group */ }
 
     try {
-      const encodedGroup: string = encodeURIComponent(ADMIN_GROUP.replace(/'/g,"''"));
+      const group: string = ADMIN_GROUP.replace(/'/g,"''");
       const response: SPHttpClientResponse = await this.spHttpClient.get(
-        `${VgmAdminConfigService.sourceWebUrl}/_api/web/sitegroups/getbyname('${encodedGroup}')/users?$select=Email&$top=200`,
+        `${VgmAdminConfigService.sourceWebUrl}/_api/web/sitegroups/getbyname('${group}')/users?$select=Email&$top=200`,
         SPHttpClient.configurations.v1,
         { headers: { Accept: 'application/json;odata=nometadata' } }
       );
@@ -84,7 +87,8 @@ export default class VgmAdminConfigService {
 
   public async load(): Promise<VgmPortalConfig> {
     try {
-      const url: string = `${VgmAdminConfigService.sourceWebUrl}/_api/web/lists/getbytitle('${encodeURIComponent(LIST_TITLE)}')/items?$select=Title,ConfigValue&$top=20`;
+      const escaped: string = LIST_TITLE.replace(/'/g,"''");
+      const url: string = `${VgmAdminConfigService.sourceWebUrl}/_api/web/lists/getbytitle('${escaped}')/items?$select=Title,ConfigValue&$top=20`;
       const response: SPHttpClientResponse = await this.spHttpClient.get(url,SPHttpClient.configurations.v1,{ headers: { Accept: 'application/json;odata=nometadata' } });
       if (!response.ok) return this.cloneDefault();
       const payload: { value?: Array<{ Title?: string; ConfigValue?: string }> } = await response.json() as { value?: Array<{ Title?: string; ConfigValue?: string }> };
@@ -94,9 +98,11 @@ export default class VgmAdminConfigService {
       const appearance: string | undefined = map.get('appearance');
       const modules: string | undefined = map.get('modules');
       const activityOrder: string | undefined = map.get('activityOrder');
+      const quickLinks: string | undefined = map.get('quickLinks');
       if (appearance) config.appearance = { ...config.appearance, ...JSON.parse(appearance) };
       if (modules) config.modules = { ...config.modules, ...JSON.parse(modules) };
       if (activityOrder) config.activityOrder = JSON.parse(activityOrder) as VgmActivityModuleKey[];
+      if (quickLinks) config.quickLinks = JSON.parse(quickLinks) as VgmQuickLinkConfig[];
       config.customCss = map.get('customCss') || '';
       return config;
     } catch {
@@ -109,6 +115,7 @@ export default class VgmAdminConfigService {
     await this.upsert('appearance',JSON.stringify(config.appearance));
     await this.upsert('modules',JSON.stringify(config.modules));
     await this.upsert('activityOrder',JSON.stringify(config.activityOrder));
+    await this.upsert('quickLinks',JSON.stringify(config.quickLinks || []));
     await this.upsert('customCss',config.customCss || '');
   }
 
