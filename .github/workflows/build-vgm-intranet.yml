@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'clientes/vgm/intranet/**'
+      - '!clientes/vgm/intranet/sharepoint/solution/vgm-intranet.sppkg'
       - '.github/workflows/build-vgm-intranet.yml'
   workflow_dispatch:
 
