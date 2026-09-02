@@ -7,6 +7,7 @@ import VgmDataService, {
 import VgmSearchService, {
   VgmArea, VgmAreaActivity, VgmClientAccess, VgmClientActivity, VgmRecentDocument
 } from './VgmSearchService';
+import VgmFolderAccessService from './VgmFolderAccessService';
 import { VGM_STYLES } from './VgmIntranetStyles';
 
 export interface IVgmIntranetWebPartProps {}
@@ -25,12 +26,15 @@ type DashboardData = {
 export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntranetWebPartProps> {
   private service!: VgmDataService;
   private searchService!: VgmSearchService;
+  private folderAccessService!: VgmFolderAccessService;
   private accessibleClients: VgmClientAccess[] = [];
   private recentDocuments: VgmRecentDocument[] = [];
   private activityClients: VgmClientActivity[] = [];
   private areaActivity: VgmAreaActivity = { LEGAL: 0, TAX: 0, OUTSOURCING: 0, AUDITORIA: 0 };
   private clientSearch: string = '';
   private clientAreaFilter: 'ALL' | VgmArea = 'ALL';
+  private folderScanStarted: boolean = false;
+  private folderScanCompleted: boolean = false;
   private data: DashboardData = { menu: [], birthdays: [], events: [], news: [], links: [], indicators: [], financial: [] };
 
   public render(): void {
@@ -41,6 +45,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     this.domElement.innerHTML = `<style>${VGM_STYLES}</style><div class="vgmApp"><div class="vgmLoading">Cargando intranet VGM…</div></div>`;
     this.service = new VgmDataService(this.context.spHttpClient);
     this.searchService = new VgmSearchService(this.context.spHttpClient);
+    this.folderAccessService = new VgmFolderAccessService(this.context.spHttpClient,this.service);
 
     const [menu, sharePointBirthdays, events, news, links, gallery, indicators, financial, accessibleClients, recentDocuments, activity, graphBirthdays] = await Promise.all([
       this.service.getMenu(),
@@ -214,9 +219,9 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
   }
 
   private renderClientActivity(items: VgmClientActivity[]): string {
-    if (!items.length) return '<div class="vgmEmpty">No se detectó actividad reciente en los sitios que puedes consultar.</div>';
+    if (!items.length) return '<div class="vgmEmpty">No se detectó actividad reciente en las carpetas que puedes consultar.</div>';
     const max: number = Math.max(...items.map((item: VgmClientActivity) => item.total),1);
-    return `<div class="vgmActivityList">${items.map((item: VgmClientActivity,index: number) => `<a href="${this.esc(item.siteUrl)}" target="_blank" rel="noopener" class="vgmActivityClient"><span class="vgmActivityRank">${String(index + 1).padStart(2,'0')}</span><span class="vgmActivityData"><strong>${this.esc(item.code)} · ${this.esc(item.name)}</strong><span class="vgmActivityBar"><i style="width:${Math.round((item.total/max)*100)}%"></i></span><small>${this.activityAreasText(item)}</small></span><b>${item.total}</b></a>`).join('')}</div>`;
+    return `<div class="vgmActivityList">${items.map((item: VgmClientActivity,index: number) => `<a href="${this.esc(item.openUrl)}" target="_blank" rel="noopener" class="vgmActivityClient"><span class="vgmActivityRank">${String(index + 1).padStart(2,'0')}</span><span class="vgmActivityData"><strong>${this.esc(item.code)} · ${this.esc(item.name)}</strong><span class="vgmActivityBar"><i style="width:${Math.round((item.total/max)*100)}%"></i></span><small>${this.activityAreasText(item)}</small></span><b>${item.total}</b></a>`).join('')}</div>`;
   }
 
   private renderAreaActivity(activity: VgmAreaActivity): string {
@@ -241,7 +246,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       .filter((client: VgmClientAccess) => !q || this.normalize(`${client.code} ${client.name}`).includes(q));
     const counter: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-count]');
     if (counter) counter.textContent = `${filtered.length} clientes visibles según tus permisos`;
-    if (!filtered.length) return '<div class="vgmEmpty">No se encontraron clientes para este filtro. SharePoint solo muestra recursos que tu usuario puede consultar.</div>';
+    if (!filtered.length) return '<div class="vgmEmpty">No se encontraron clientes para este filtro.</div>';
     return filtered.map((client: VgmClientAccess) => `<div class="vgmClientRow vgmClientRowAccess"><strong>${this.esc(client.code)}</strong><span><b>${this.esc(client.name)}</b><small>${this.esc(client.siteUrl)}</small></span><span class="vgmFolderLinks">${this.renderAccessibleAreaLink(client,'LEGAL')}${this.renderAccessibleAreaLink(client,'TAX')}${this.renderAccessibleAreaLink(client,'OUTSOURCING')}${this.renderAccessibleAreaLink(client,'AUDITORIA')}</span></div>`).join('');
   }
 
@@ -256,7 +261,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       const actionTarget: HTMLElement | null = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
       if (actionTarget) {
         const action: string | null = actionTarget.getAttribute('data-action');
-        if (action === 'clients') this.openModal('clients');
+        if (action === 'clients') void this.openClients();
         if (action === 'close') this.closeModals();
         if (action === 'news') this.openNews(Number(actionTarget.getAttribute('data-id')));
       }
@@ -268,6 +273,37 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     });
     const search: HTMLInputElement | null = this.domElement.querySelector<HTMLInputElement>('[data-client-search]');
     search?.addEventListener('input',(): void => { this.clientSearch = search.value; this.refreshClientModal(); });
+  }
+
+  private async openClients(): Promise<void> {
+    this.openModal('clients');
+    if (this.accessibleClients.length || this.folderScanCompleted || this.folderScanStarted) return;
+    this.folderScanStarted = true;
+    const rows: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-list]');
+    const counter: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-count]');
+    if (rows) rows.innerHTML = '<div class="vgmEmpty" data-folder-scan>Search no encontró accesos. Verificando permisos directamente en las carpetas…</div>';
+    try {
+      const directClients: VgmClientAccess[] = await this.folderAccessService.scanAccessibleClients((completed: number,total: number,found: number): void => {
+        if (counter) counter.textContent = `Verificando carpetas ${completed}/${total} · ${found} clientes encontrados`;
+        const status: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-folder-scan]');
+        if (status) status.textContent = `Comprobando permisos reales de SharePoint… ${completed}/${total}. Clientes encontrados: ${found}.`;
+      },10);
+      this.accessibleClients = directClients;
+      this.folderScanCompleted = true;
+      this.refreshClientModal();
+      this.refreshClientsButton();
+    } catch (error) {
+      console.warn('VGM: no fue posible verificar los permisos directos de las carpetas.',error);
+      this.folderScanCompleted = true;
+      if (rows) rows.innerHTML = '<div class="vgmEmpty">No fue posible validar los accesos directos a las carpetas.</div>';
+    } finally {
+      this.folderScanStarted = false;
+    }
+  }
+
+  private refreshClientsButton(): void {
+    const button: HTMLButtonElement | null = this.domElement.querySelector<HTMLButtonElement>('[data-action="clients"]');
+    if (button) button.textContent = `☰ Mis clientes${this.accessibleClients.length ? ` (${this.accessibleClients.length})` : ''}`;
   }
 
   private refreshClientModal(): void {
