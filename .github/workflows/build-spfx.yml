@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths-ignore:
+      - 'clientes/**'
       - 'sharepoint/solution/intranet-spfx-vgm.sppkg'
   workflow_dispatch:
 
