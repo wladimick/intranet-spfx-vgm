@@ -4,7 +4,7 @@
     "name": "vgm-intranet-client-side-solution",
     "title": "VGM Intranet",
     "id": "f89eb28f-42a7-4617-b381-e522ab6dcf5a",
-    "version": "1.0.0.5",
+    "version": "1.0.0.6",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
@@ -16,8 +16,8 @@
       "mpnId": "Undefined-1.23.2"
     },
     "metadata": {
-      "shortDescription": { "default": "Intranet VGM modernizada con SharePoint Framework" },
-      "longDescription": { "default": "Porta la portada histórica de VGM a SPFx e incorpora experiencia personalizada por permisos directos de carpeta, precarga de accesos, documentos recientes, actividad y cumpleaños Microsoft 365." },
+      "shortDescription": { "default": "Intranet VGM administrable y personalizada con SharePoint Framework" },
+      "longDescription": { "default": "Portada VGM SPFx con permisos directos por carpeta, precarga de accesos, actividad, búsqueda, favoritos, recientes, administración de módulos, apariencia, CSS personalizado y diagnóstico de fuentes." },
       "screenshotPaths": [],
       "videoUrl": "",
       "categories": []
