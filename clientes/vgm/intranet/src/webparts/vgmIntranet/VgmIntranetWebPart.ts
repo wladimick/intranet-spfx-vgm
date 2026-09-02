@@ -35,6 +35,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
   private clientAreaFilter: 'ALL' | VgmArea = 'ALL';
   private folderScanStarted: boolean = false;
   private folderScanCompleted: boolean = false;
+  private folderScanProgress: { completed: number; total: number; found: number } = { completed: 0, total: 0, found: 0 };
   private data: DashboardData = { menu: [], birthdays: [], events: [], news: [], links: [], indicators: [], financial: [] };
 
   public render(): void {
@@ -78,6 +79,11 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     };
     this.paint();
     this.bindEvents();
+
+    // La validación directa de carpetas comienza apenas carga la portada. No bloquea
+    // el render principal y se conserva en memoria para que "Mis clientes" abra al instante.
+    if (this.accessibleClients.length) this.folderScanCompleted = true;
+    else void this.preloadFolderAccess();
   }
 
   private paint(): void {
@@ -245,8 +251,13 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       .filter((client: VgmClientAccess) => this.clientAreaFilter === 'ALL' || Boolean(client.areas[this.clientAreaFilter]))
       .filter((client: VgmClientAccess) => !q || this.normalize(`${client.code} ${client.name}`).includes(q));
     const counter: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-count]');
-    if (counter) counter.textContent = `${filtered.length} clientes visibles según tus permisos`;
-    if (!filtered.length) return '<div class="vgmEmpty">No se encontraron clientes para este filtro.</div>';
+    if (counter) counter.textContent = this.folderScanStarted && !this.folderScanCompleted
+      ? `Preparando accesos ${this.folderScanProgress.completed}/${this.folderScanProgress.total || '…'} · ${this.folderScanProgress.found} clientes encontrados`
+      : `${filtered.length} clientes visibles según tus permisos`;
+    if (!filtered.length) {
+      if (this.folderScanStarted && !this.folderScanCompleted) return `<div class="vgmEmpty" data-folder-scan>Preparando tus accesos en segundo plano… ${this.folderScanProgress.completed}/${this.folderScanProgress.total || '…'}.</div>`;
+      return '<div class="vgmEmpty">No se encontraron clientes para este filtro.</div>';
+    }
     return filtered.map((client: VgmClientAccess) => `<div class="vgmClientRow vgmClientRowAccess"><strong>${this.esc(client.code)}</strong><span><b>${this.esc(client.name)}</b><small>${this.esc(client.siteUrl)}</small></span><span class="vgmFolderLinks">${this.renderAccessibleAreaLink(client,'LEGAL')}${this.renderAccessibleAreaLink(client,'TAX')}${this.renderAccessibleAreaLink(client,'OUTSOURCING')}${this.renderAccessibleAreaLink(client,'AUDITORIA')}</span></div>`).join('');
   }
 
@@ -261,7 +272,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       const actionTarget: HTMLElement | null = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
       if (actionTarget) {
         const action: string | null = actionTarget.getAttribute('data-action');
-        if (action === 'clients') void this.openClients();
+        if (action === 'clients') this.openClients();
         if (action === 'close') this.closeModals();
         if (action === 'news') this.openNews(Number(actionTarget.getAttribute('data-id')));
       }
@@ -275,35 +286,51 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     search?.addEventListener('input',(): void => { this.clientSearch = search.value; this.refreshClientModal(); });
   }
 
-  private async openClients(): Promise<void> {
+  private openClients(): void {
     this.openModal('clients');
+    this.refreshClientModal();
+    // Normalmente la precarga ya comenzó al renderizar la portada. Este guard solo
+    // cubre un caso excepcional en que aún no se haya iniciado.
+    if (!this.accessibleClients.length && !this.folderScanStarted && !this.folderScanCompleted) void this.preloadFolderAccess();
+  }
+
+  private async preloadFolderAccess(): Promise<void> {
     if (this.accessibleClients.length || this.folderScanCompleted || this.folderScanStarted) return;
     this.folderScanStarted = true;
-    const rows: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-list]');
-    const counter: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-count]');
-    if (rows) rows.innerHTML = '<div class="vgmEmpty" data-folder-scan>Search no encontró accesos. Verificando permisos directamente en las carpetas…</div>';
+    this.folderScanProgress = { completed: 0, total: 0, found: 0 };
+    this.refreshClientsButton();
+
     try {
       const directClients: VgmClientAccess[] = await this.folderAccessService.scanAccessibleClients((completed: number,total: number,found: number): void => {
-        if (counter) counter.textContent = `Verificando carpetas ${completed}/${total} · ${found} clientes encontrados`;
-        const status: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-folder-scan]');
-        if (status) status.textContent = `Comprobando permisos reales de SharePoint… ${completed}/${total}. Clientes encontrados: ${found}.`;
+        this.folderScanProgress = { completed, total, found };
+        // Solo repintamos el popup si está abierto; la exploración sigue aunque el usuario
+        // nunca lo abra.
+        const modal: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-modal="clients"]');
+        if (modal?.classList.contains('open')) this.refreshClientModal();
       },10);
       this.accessibleClients = directClients;
       this.folderScanCompleted = true;
       this.refreshClientModal();
       this.refreshClientsButton();
     } catch (error) {
-      console.warn('VGM: no fue posible verificar los permisos directos de las carpetas.',error);
+      console.warn('VGM: no fue posible precargar los permisos directos de las carpetas.',error);
       this.folderScanCompleted = true;
-      if (rows) rows.innerHTML = '<div class="vgmEmpty">No fue posible validar los accesos directos a las carpetas.</div>';
+      const modal: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-modal="clients"]');
+      if (modal?.classList.contains('open')) {
+        const rows: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-list]');
+        if (rows) rows.innerHTML = '<div class="vgmEmpty">No fue posible validar los accesos directos a las carpetas.</div>';
+      }
     } finally {
       this.folderScanStarted = false;
+      this.refreshClientsButton();
     }
   }
 
   private refreshClientsButton(): void {
     const button: HTMLButtonElement | null = this.domElement.querySelector<HTMLButtonElement>('[data-action="clients"]');
-    if (button) button.textContent = `☰ Mis clientes${this.accessibleClients.length ? ` (${this.accessibleClients.length})` : ''}`;
+    if (!button) return;
+    if (this.folderScanStarted && !this.folderScanCompleted && !this.accessibleClients.length) button.textContent = '☰ Mis clientes (…)';
+    else button.textContent = `☰ Mis clientes${this.accessibleClients.length ? ` (${this.accessibleClients.length})` : ''}`;
   }
 
   private refreshClientModal(): void {
