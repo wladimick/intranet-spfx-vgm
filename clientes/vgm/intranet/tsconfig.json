@@ -1,6 +1,6 @@
 {
   "extends": "./node_modules/@microsoft/spfx-web-build-rig/profiles/default/tsconfig-base.json",
   "compilerOptions": {
-    "lib": ["es2015", "dom", "es2016.array.include"]
+    "lib": ["es2017", "dom", "es2016.array.include"]
   }
 }
