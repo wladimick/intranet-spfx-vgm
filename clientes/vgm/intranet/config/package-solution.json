@@ -4,7 +4,7 @@
     "name": "vgm-intranet-client-side-solution",
     "title": "VGM Intranet",
     "id": "f89eb28f-42a7-4617-b381-e522ab6dcf5a",
-    "version": "1.0.0.0",
+    "version": "1.0.0.1",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": false,
     "isDomainIsolated": false,
