@@ -1,0 +1,43 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "vgm-intranet-client-side-solution",
+    "title": "VGM Intranet",
+    "id": "f89eb28f-42a7-4617-b381-e522ab6dcf5a",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": false,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "Tibox",
+      "websiteUrl": "https://www.tibox.cl",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.2"
+    },
+    "metadata": {
+      "shortDescription": { "default": "Intranet VGM modernizada con SharePoint Framework" },
+      "longDescription": { "default": "Porta la portada histórica de VGM a SPFx, manteniendo sus listas, eventos, cumpleaños, noticias, galería, enlaces, indicadores y acceso a clientes." },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "webApiPermissionRequests": [
+      {
+        "resource": "Microsoft Graph",
+        "scope": "GroupMember.Read.All"
+      }
+    ],
+    "features": [
+      {
+        "title": "VGM Intranet Feature",
+        "description": "Componentes de la intranet VGM",
+        "id": "c7b8d2a8-18d1-426a-8a10-0f7661d7ae92",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/vgm-intranet.sppkg"
+  }
+}
