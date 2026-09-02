@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "c22195fd-3649-4f53-8586-4d816115224c",
+  "alias": "VgmIntranetWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart", "SharePointFullPage"],
+  "supportsThemeVariants": true,
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+      "group": { "default": "Other" },
+      "title": { "default": "VGM - Intranet" },
+      "description": { "default": "Portada moderna de la intranet VGM conectada a las listas existentes de SharePoint." },
+      "officeFabricIconFontName": "Home",
+      "properties": {}
+    }
+  ]
+}
