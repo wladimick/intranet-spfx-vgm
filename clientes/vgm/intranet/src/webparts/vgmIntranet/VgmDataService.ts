@@ -18,13 +18,14 @@ export default class VgmDataService {
 
   public async getMenu(): Promise<MenuItem[]> {
     const items: LegacyItem[] = await this.getListItems('Menú Principal', '$orderby=Ubicacion asc&$top=100');
-    return items.map((item: LegacyItem) => ({
+    const menu: MenuItem[] = items.map((item: LegacyItem): MenuItem => ({
       title: this.text(item.Title),
       url: this.urlValue(item['Hiperv_x00ed_nculo']),
       parent: this.text(item.Superior) || undefined,
       kind: this.text(item.Menu).toLowerCase() === 'submenu' ? 'submenu' : 'menu',
       order: Number(item.Ubicacion || 0)
-    })).filter((item: MenuItem) => Boolean(item.title));
+    }));
+    return menu.filter((item: MenuItem) => Boolean(item.title));
   }
 
   public async getBirthdays(): Promise<BirthdayItem[]> {
@@ -134,15 +135,20 @@ export default class VgmDataService {
   }
 
   public buildClientSiteBase(client: ClientItem): string {
-    const codeNumber: number = Number.parseInt(client.code, 10);
-    const suffix: string = Number.isFinite(codeNumber) && codeNumber >= 105 && codeNumber <= 193 ? '2' : '';
+    const suffix: string = this.clientSuffix(client.code);
     return `https://vgmconsultants.sharepoint.com/sites/${client.code}-${this.slug(client.name)}${suffix}`;
   }
 
   public buildClientFolderUrl(client: ClientItem, folderName: string): string {
+    const suffix: string = this.clientSuffix(client.code);
     const base: string = this.buildClientSiteBase(client);
-    const path: string = `/sites/${client.code}-${this.slug(client.name)}${base.endsWith('2') ? '2' : ''}/Documentos compartidos/${folderName}`;
+    const path: string = `/sites/${client.code}-${this.slug(client.name)}${suffix}/Documentos compartidos/${folderName}`;
     return `${base}/Documentos%20compartidos/Forms/AllItems.aspx?RootFolder=${encodeURIComponent(path)}`;
+  }
+
+  private clientSuffix(code: string): string {
+    const codeNumber: number = Number.parseInt(code, 10);
+    return Number.isFinite(codeNumber) && codeNumber >= 105 && codeNumber <= 193 ? '2' : '';
   }
 
   private async getListItems(title: string, query: string): Promise<LegacyItem[]> {
@@ -179,7 +185,7 @@ export default class VgmDataService {
     for (const candidate of candidates) {
       if (item[candidate] !== undefined && item[candidate] !== null && item[candidate] !== '') return this.text(item[candidate]);
     }
-    const hit: string | undefined = Object.keys(item).find((key: string) => this.simplify(key).includes(keyword));
+    const hit: string | undefined = Object.keys(item).find((key: string) => this.simplify(key).indexOf(keyword) !== -1);
     return hit ? this.text(item[hit]) : '';
   }
 
