@@ -2,14 +2,14 @@ import { Version } from '@microsoft/sp-core-library';
 import { MSGraphClientV3 } from '@microsoft/sp-http';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
 import VgmDataService, {
-  BirthdayItem, ClientItem, EventItem, FinancialNewsItem, GalleryItem, IndicatorItem, LinkItem, MenuItem, NewsItem
+  BirthdayItem, EventItem, FinancialNewsItem, GalleryItem, IndicatorItem, LinkItem, MenuItem, NewsItem
 } from './VgmDataService';
+import VgmSearchService, {
+  VgmArea, VgmAreaActivity, VgmClientAccess, VgmClientActivity, VgmRecentDocument
+} from './VgmSearchService';
 import { VGM_STYLES } from './VgmIntranetStyles';
 
 export interface IVgmIntranetWebPartProps {}
-
-type FolderKey = 'LEGAL' | 'TAX' | 'OUTSOURCING' | 'AUDITORIA';
-type Permissions = { admin: boolean; folders: Record<FolderKey, Set<string>> } | undefined;
 
 type DashboardData = {
   menu: MenuItem[];
@@ -24,29 +24,14 @@ type DashboardData = {
 
 export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntranetWebPartProps> {
   private service!: VgmDataService;
-  private clients: ClientItem[] = [];
-  private filteredClients: ClientItem[] = [];
-  private clientsLoaded: boolean = false;
-  private partnerFilter: string = 'ALL';
+  private searchService!: VgmSearchService;
+  private accessibleClients: VgmClientAccess[] = [];
+  private recentDocuments: VgmRecentDocument[] = [];
+  private activityClients: VgmClientActivity[] = [];
+  private areaActivity: VgmAreaActivity = { LEGAL: 0, TAX: 0, OUTSOURCING: 0, AUDITORIA: 0 };
   private clientSearch: string = '';
-  private permissions: Permissions;
+  private clientAreaFilter: 'ALL' | VgmArea = 'ALL';
   private data: DashboardData = { menu: [], birthdays: [], events: [], news: [], links: [], indicators: [], financial: [] };
-
-  private readonly groupPermissions: Record<string, { admin?: boolean; partners?: string[] | '*'; folders?: FolderKey[] }> = {
-    'SP- Administradores Globales': { admin: true },
-    'Equipo Legal - Jaime Rosso': { partners: '*', folders: ['LEGAL'] },
-    'Equipo TAX - Pablo Vera': { partners: ['PV'], folders: ['TAX'] },
-    'Equipo 2 TAX - Pablo Vera': { partners: ['PV'], folders: ['TAX'] },
-    'Equipo TAX - Claudia Gómez': { partners: ['CG'], folders: ['TAX'] },
-    'Equipo TAX - Jaime Rosso': { partners: ['JR'], folders: ['TAX'] },
-    'Equipo Tax - Álvaro Mecklenburg': { partners: ['AM'], folders: ['TAX'] },
-    'Equipo OUT - Pablo Vera': { partners: ['PV'], folders: ['OUTSOURCING'] },
-    'Equipo OUT - Claudia Gómez': { partners: ['CG'], folders: ['OUTSOURCING'] },
-    'Equipo OUT- Álvaro Mecklenburg': { partners: ['AM'], folders: ['OUTSOURCING'] },
-    'Equipo OUT - TODOS': { partners: '*', folders: ['OUTSOURCING'] },
-    'Equipo Auditores - César Cavieres': { partners: ['CC'], folders: ['AUDITORIA'] },
-    'Equipo Auditores - Jorge Belloni': { partners: ['JB'], folders: ['AUDITORIA'] }
-  };
 
   public render(): void {
     void this.renderAsync();
@@ -55,8 +40,9 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
   private async renderAsync(): Promise<void> {
     this.domElement.innerHTML = `<style>${VGM_STYLES}</style><div class="vgmApp"><div class="vgmLoading">Cargando intranet VGM…</div></div>`;
     this.service = new VgmDataService(this.context.spHttpClient);
+    this.searchService = new VgmSearchService(this.context.spHttpClient);
 
-    const [menu, birthdays, events, news, links, gallery, indicators, financial, permissions] = await Promise.all([
+    const [menu, sharePointBirthdays, events, news, links, gallery, indicators, financial, accessibleClients, recentDocuments, activity, graphBirthdays] = await Promise.all([
       this.service.getMenu(),
       this.service.getBirthdays(),
       this.service.getEvents(),
@@ -65,11 +51,26 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       this.service.getGallery(),
       this.service.getIndicators(),
       this.service.getFinancialNews(),
-      this.loadPermissions()
+      this.searchService.getAccessibleClients().catch((error: unknown): VgmClientAccess[] => { console.warn('VGM: no se pudieron obtener clientes visibles por Search.',error); return []; }),
+      this.searchService.getRecentDocuments(8).catch((error: unknown): VgmRecentDocument[] => { console.warn('VGM: no se pudieron obtener documentos recientes.',error); return []; }),
+      this.searchService.getActivity(7,1200).catch((error: unknown) => { console.warn('VGM: no se pudo calcular actividad.',error); return { clients: [] as VgmClientActivity[], areas: { LEGAL:0,TAX:0,OUTSOURCING:0,AUDITORIA:0 } as VgmAreaActivity, documents: [] as VgmRecentDocument[] }; }),
+      this.loadMicrosoft365Birthdays()
     ]);
 
-    this.data = { menu, birthdays, events, news, links, gallery, indicators, financial };
-    this.permissions = permissions;
+    this.accessibleClients = accessibleClients;
+    this.recentDocuments = recentDocuments;
+    this.activityClients = activity.clients;
+    this.areaActivity = activity.areas;
+    this.data = {
+      menu,
+      birthdays: this.mergeBirthdays(graphBirthdays,sharePointBirthdays),
+      events,
+      news,
+      links,
+      gallery,
+      indicators,
+      financial
+    };
     this.paint();
     this.bindEvents();
   }
@@ -79,10 +80,9 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     const email: string = this.context.pageContext.user.email || '';
     const photo: string = `https://vgmconsultants.sharepoint.com/_layouts/15/userphoto.aspx?size=L&accountname=${encodeURIComponent(email)}`;
     const today: Date = new Date();
-    const nextBirthdays: BirthdayItem[] = this.upcomingBirthdays(this.data.birthdays).slice(0, 5);
+    const nextBirthdays: BirthdayItem[] = this.upcomingBirthdays(this.data.birthdays).slice(0,5);
     const featured: NewsItem | undefined = this.data.news[0];
-    const secondary: NewsItem[] = this.data.news.slice(1, 5);
-    const permissionNote: string = this.permissions ? '' : '<div class="vgmPermissionNote">El control de acceso a clientes todavía no pudo validar los grupos de Microsoft 365. Un administrador del sitio mantiene acceso para pruebas; para usuarios normales las carpetas quedan bloqueadas hasta aprobar Graph.</div>';
+    const secondary: NewsItem[] = this.data.news.slice(1,5);
 
     this.domElement.innerHTML = `
       <style>${VGM_STYLES}</style>
@@ -94,7 +94,7 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
               <div class="vgmSpacer"></div>
               <div class="vgmUser"><span><small>Bienvenido</small><strong>${this.esc(displayName)}</strong></span><img src="${photo}" alt="${this.esc(displayName)}"></div>
             </div>
-            <nav class="vgmMenu">${this.renderMenu(this.data.menu)}<button class="vgmClientsBtn" data-action="clients">☰ Clientes</button></nav>
+            <nav class="vgmMenu">${this.renderMenu(this.data.menu)}<button class="vgmClientsBtn" data-action="clients">☰ Mis clientes${this.accessibleClients.length ? ` (${this.accessibleClients.length})` : ''}</button></nav>
           </header>
 
           <div class="vgmPortalGrid">
@@ -105,18 +105,16 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
                   ${this.renderLegacyQuickLinks()}
                   <a class="vgmTicket" href="https://soporte.tibox.cl/Login/LoginCliente" target="_blank" rel="noopener">◉ Tickets Tibox</a>
                 </div>
-
                 <div class="vgmCalendarColumn">
                   <section class="vgmCard"><div class="vgmCardHead"><h2>${this.capitalize(today.toLocaleDateString('es-CL',{month:'long'}))} ${today.getFullYear()}</h2></div><div class="vgmCardBody">${this.renderCalendar(today,this.data.events)}${this.renderEvents(this.data.events.slice(0,3))}</div></section>
                   <section class="vgmCard"><div class="vgmCardHead"><h2>Próximos Cumpleaños</h2></div><div class="vgmCardBody">${this.renderBirthdays(nextBirthdays)}</div></section>
                 </div>
               </div>
-
               <section class="vgmCard vgmFinancialCard"><div class="vgmCardHead"><h2>Diario Financiero</h2></div><div class="vgmCardBody">${this.renderFinancial(this.data.financial)}</div></section>
             </section>
 
             <section class="vgmRightArea">
-              <section class="vgmCard vgmNewsCard"><div class="vgmCardHead"><h2>Noticias</h2></div>${this.renderNews(featured, secondary)}</section>
+              <section class="vgmCard vgmNewsCard"><div class="vgmCardHead"><h2>Noticias</h2></div>${this.renderNews(featured,secondary)}</section>
               <section class="vgmCard"><div class="vgmCardHead"><h2>Indicadores Económicos</h2></div><div class="vgmCardBody"><div class="vgmIndicators">${this.renderIndicators(this.data.indicators)}</div></div></section>
               <div class="vgmBottom">
                 <section class="vgmCard"><div class="vgmCardHead"><h2>Galerías</h2></div><div class="vgmCardBody">${this.renderGallery(this.data.gallery)}</div></section>
@@ -124,9 +122,18 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
               </div>
             </section>
           </div>
+
+          <section class="vgmWorkSection">
+            <div class="vgmWorkTitle"><span>MI ACTIVIDAD EN VGM</span><small>Información visible según tus permisos en SharePoint · últimos 7 días</small></div>
+            <div class="vgmWorkGrid">
+              <section class="vgmCard vgmRecentCard"><div class="vgmCardHead"><h2>Documentos recientes</h2><span class="vgmSecurityBadge">Permisos aplicados</span></div><div class="vgmCardBody">${this.renderRecentDocuments(this.recentDocuments)}</div></section>
+              <section class="vgmCard"><div class="vgmCardHead"><h2>Clientes con mayor actividad</h2></div><div class="vgmCardBody">${this.renderClientActivity(this.activityClients.slice(0,5))}</div></section>
+              <section class="vgmCard"><div class="vgmCardHead"><h2>Actividad por área</h2></div><div class="vgmCardBody">${this.renderAreaActivity(this.areaActivity)}</div></section>
+            </div>
+          </section>
         </div>
 
-        <div class="vgmModalOverlay" data-modal="clients"><div class="vgmModal"><div class="vgmModalHead"><h2>Listado de Clientes</h2><button class="vgmClose" data-action="close">×</button></div>${permissionNote}<div class="vgmClientToolbar"><input data-client-search placeholder="Buscar cliente…"><div data-partner-chips></div></div><div class="vgmClientList" data-client-list><div class="vgmLoading" style="color:#334f82">Cargando clientes…</div></div></div></div>
+        <div class="vgmModalOverlay" data-modal="clients"><div class="vgmModal"><div class="vgmModalHead"><div><h2>Mis clientes</h2><small data-client-count>${this.accessibleClients.length} clientes visibles según tus permisos</small></div><button class="vgmClose" data-action="close">×</button></div><div class="vgmClientToolbar"><input data-client-search placeholder="Buscar cliente por nombre o código…"><div class="vgmAreaFilters">${this.renderAreaFilterButtons()}</div></div><div class="vgmClientList" data-client-list>${this.renderClientRows()}</div></div></div>
         <div class="vgmModalOverlay" data-modal="news"><div class="vgmModal"><div class="vgmModalHead"><h2 data-news-title>Noticia</h2><button class="vgmClose" data-action="close">×</button></div><div class="vgmCardBody" data-news-content></div></div></div>
       </div>`;
   }
@@ -175,8 +182,8 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
   private renderCalendar(date: Date, events: EventItem[]): string {
     const year: number = date.getFullYear();
     const month: number = date.getMonth();
-    const first: Date = new Date(year, month, 1);
-    const days: number = new Date(year, month + 1, 0).getDate();
+    const first: Date = new Date(year,month,1);
+    const days: number = new Date(year,month + 1,0).getDate();
     let offset: number = first.getDay() - 1;
     if (offset < 0) offset = 6;
     const eventDays: Set<number> = new Set(events.filter((event: EventItem) => event.start && event.start.getFullYear() === year && event.start.getMonth() === month).map((event: EventItem) => event.start!.getDate()));
@@ -197,67 +204,77 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
       const photo: string = `https://vgmconsultants.sharepoint.com/_layouts/15/userphoto.aspx?size=M&accountname=${encodeURIComponent(item.email)}`;
       const next: Date = this.nextBirthday(item.date!);
       const message: string = encodeURIComponent(`¡Feliz cumpleaños ${item.name.split(' ')[0]}! Espero que tengas un gran día.`);
-      return `<div class="vgmBirthday"><img src="${photo}" alt=""><span><strong>${this.esc(item.name)}</strong><small>${this.esc(item.area)} · ${next.toLocaleDateString('es-CL',{day:'numeric',month:'short'})}</small></span><a href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(item.email)}&message=${message}" target="_blank" rel="noopener">Felicitar</a></div>`;
+      return `<div class="vgmBirthday"><img src="${photo}" alt=""><span><strong>${this.esc(item.name)}</strong><small>${this.esc(item.area)} · ${next.toLocaleDateString('es-CL',{day:'numeric',month:'short'})}</small></span>${item.email ? `<a href="https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(item.email)}&message=${message}" target="_blank" rel="noopener">Felicitar</a>` : ''}</div>`;
     }).join('');
   }
 
+  private renderRecentDocuments(items: VgmRecentDocument[]): string {
+    if (!items.length) return '<div class="vgmEmpty">No se encontraron documentos recientes visibles para tu usuario.</div>';
+    return `<div class="vgmRecentList">${items.map((item: VgmRecentDocument) => `<a class="vgmRecentDoc" href="${this.esc(item.path)}" target="_blank" rel="noopener"><span class="vgmFileIcon ${this.esc(item.fileType)}">${this.fileAbbr(item.fileType)}</span><span class="vgmRecentText"><strong>${this.esc(item.title)}</strong><small>${this.esc(item.siteTitle || item.clientCode || 'SharePoint')}${item.area ? ` · ${this.areaLabel(item.area)}` : ''}${item.author ? ` · ${this.esc(item.author)}` : ''}</small></span><time>${item.modified ? this.relativeTime(item.modified) : ''}</time></a>`).join('')}</div>`;
+  }
+
+  private renderClientActivity(items: VgmClientActivity[]): string {
+    if (!items.length) return '<div class="vgmEmpty">No se detectó actividad reciente en los sitios que puedes consultar.</div>';
+    const max: number = Math.max(...items.map((item: VgmClientActivity) => item.total),1);
+    return `<div class="vgmActivityList">${items.map((item: VgmClientActivity,index: number) => `<a href="${this.esc(item.siteUrl)}" target="_blank" rel="noopener" class="vgmActivityClient"><span class="vgmActivityRank">${String(index + 1).padStart(2,'0')}</span><span class="vgmActivityData"><strong>${this.esc(item.code)} · ${this.esc(item.name)}</strong><span class="vgmActivityBar"><i style="width:${Math.round((item.total/max)*100)}%"></i></span><small>${this.activityAreasText(item)}</small></span><b>${item.total}</b></a>`).join('')}</div>`;
+  }
+
+  private renderAreaActivity(activity: VgmAreaActivity): string {
+    const entries: Array<[VgmArea,number]> = (['LEGAL','TAX','OUTSOURCING','AUDITORIA'] as VgmArea[]).map((area: VgmArea) => [area,activity[area]]);
+    const total: number = entries.reduce((sum: number,item: [VgmArea,number]) => sum + item[1],0);
+    const max: number = Math.max(...entries.map((item: [VgmArea,number]) => item[1]),1);
+    return `<div class="vgmAreaSummary"><div class="vgmAreaTotal"><strong>${total}</strong><span>documentos modificados</span></div>${entries.map(([area,count]: [VgmArea,number]) => `<div class="vgmAreaRow"><span>${this.areaLabel(area)}</span><div><i style="width:${Math.round((count/max)*100)}%"></i></div><strong>${count}</strong></div>`).join('')}</div>`;
+  }
+
+  private renderAreaFilterButtons(): string {
+    const filters: Array<'ALL' | VgmArea> = ['ALL','LEGAL','TAX','OUTSOURCING','AUDITORIA'];
+    return filters.map((area: 'ALL' | VgmArea) => {
+      const count: number = area === 'ALL' ? this.accessibleClients.length : this.accessibleClients.filter((client: VgmClientAccess) => Boolean(client.areas[area])).length;
+      return `<button class="vgmChip ${this.clientAreaFilter === area ? 'active' : ''}" data-area-filter="${area}">${area === 'ALL' ? 'Todos' : this.areaLabel(area)} <b>${count}</b></button>`;
+    }).join('');
+  }
+
+  private renderClientRows(): string {
+    const q: string = this.normalize(this.clientSearch);
+    const filtered: VgmClientAccess[] = this.accessibleClients
+      .filter((client: VgmClientAccess) => this.clientAreaFilter === 'ALL' || Boolean(client.areas[this.clientAreaFilter]))
+      .filter((client: VgmClientAccess) => !q || this.normalize(`${client.code} ${client.name}`).includes(q));
+    const counter: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-count]');
+    if (counter) counter.textContent = `${filtered.length} clientes visibles según tus permisos`;
+    if (!filtered.length) return '<div class="vgmEmpty">No se encontraron clientes para este filtro. SharePoint solo muestra recursos que tu usuario puede consultar.</div>';
+    return filtered.map((client: VgmClientAccess) => `<div class="vgmClientRow vgmClientRowAccess"><strong>${this.esc(client.code)}</strong><span><b>${this.esc(client.name)}</b><small>${this.esc(client.siteUrl)}</small></span><span class="vgmFolderLinks">${this.renderAccessibleAreaLink(client,'LEGAL')}${this.renderAccessibleAreaLink(client,'TAX')}${this.renderAccessibleAreaLink(client,'OUTSOURCING')}${this.renderAccessibleAreaLink(client,'AUDITORIA')}</span></div>`).join('');
+  }
+
+  private renderAccessibleAreaLink(client: VgmClientAccess, area: VgmArea): string {
+    const url: string | undefined = client.areas[area];
+    if (!url) return '';
+    return `<a href="${this.esc(url)}" target="_blank" rel="noopener">${this.areaLabel(area)}</a>`;
+  }
+
   private bindEvents(): void {
-    this.domElement.addEventListener('click', (event: MouseEvent): void => {
-      const target: HTMLElement | null = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
-      if (!target) return;
-      const action: string | null = target.getAttribute('data-action');
-      if (action === 'clients') void this.openClients();
-      if (action === 'close') this.closeModals();
-      if (action === 'news') this.openNews(Number(target.getAttribute('data-id')));
+    this.domElement.addEventListener('click',(event: MouseEvent): void => {
+      const actionTarget: HTMLElement | null = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
+      if (actionTarget) {
+        const action: string | null = actionTarget.getAttribute('data-action');
+        if (action === 'clients') this.openModal('clients');
+        if (action === 'close') this.closeModals();
+        if (action === 'news') this.openNews(Number(actionTarget.getAttribute('data-id')));
+      }
+      const areaTarget: HTMLElement | null = (event.target as HTMLElement).closest<HTMLElement>('[data-area-filter]');
+      if (areaTarget) {
+        this.clientAreaFilter = (areaTarget.getAttribute('data-area-filter') || 'ALL') as 'ALL' | VgmArea;
+        this.refreshClientModal();
+      }
     });
     const search: HTMLInputElement | null = this.domElement.querySelector<HTMLInputElement>('[data-client-search]');
-    search?.addEventListener('input', (): void => { this.clientSearch = search.value; this.applyClientFilters(); });
+    search?.addEventListener('input',(): void => { this.clientSearch = search.value; this.refreshClientModal(); });
   }
 
-  private async openClients(): Promise<void> {
-    this.openModal('clients');
-    if (!this.clientsLoaded) {
-      this.clients = await this.service.getClients();
-      this.clientsLoaded = true;
-      this.applyClientFilters();
-    }
-  }
-
-  private applyClientFilters(): void {
-    const q: string = this.normalize(this.clientSearch);
-    this.filteredClients = this.clients.filter((client: ClientItem) => this.hasAnyClientAccess(client.partner))
-      .filter((client: ClientItem) => this.partnerFilter === 'ALL' || this.parsePartners(client.partner).includes(this.partnerFilter))
-      .filter((client: ClientItem) => !q || [client.code,client.name,client.partner].some((value: string) => this.normalize(value).includes(q)))
-      .sort((a: ClientItem,b: ClientItem) => Number(a.code) - Number(b.code));
-    this.renderClientChips();
-    this.renderClientRows();
-  }
-
-  private renderClientChips(): void {
-    const holder: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-partner-chips]');
-    if (!holder) return;
-    const partners: string[] = ['ALL','AM','CG','PV','CC','JB','EH','JR'];
-    holder.innerHTML = partners.map((partner: string) => `<button class="vgmChip ${this.partnerFilter === partner ? 'active' : ''}" data-partner="${partner}">${partner === 'ALL' ? 'Todos' : partner}</button>`).join('');
-    holder.querySelectorAll<HTMLElement>('[data-partner]').forEach((button: HTMLElement) => button.addEventListener('click', (): void => {
-      this.partnerFilter = button.getAttribute('data-partner') || 'ALL';
-      this.applyClientFilters();
-    }));
-  }
-
-  private renderClientRows(): void {
-    const holder: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-list]');
-    if (!holder) return;
-    if (!this.filteredClients.length) {
-      holder.innerHTML = '<div class="vgmEmpty">No se encontraron clientes con los permisos o filtros actuales.</div>';
-      return;
-    }
-    holder.innerHTML = this.filteredClients.slice(0,800).map((client: ClientItem) => `<div class="vgmClientRow"><strong>${this.esc(client.code)}</strong><span>${this.esc(client.name)}</span><span>${this.esc(client.partner)}</span><span class="vgmFolderLinks">${this.folderLink(client,'LEGAL','Legal')}${this.folderLink(client,'TAX','Tax')}${this.folderLink(client,'OUTSOURCING','Outsourcing')}${this.folderLink(client,'AUDITORIA','Auditoría')}</span></div>`).join('');
-  }
-
-  private folderLink(client: ClientItem, folder: FolderKey, label: string): string {
-    const allowed: boolean = this.hasFolderAccess(client.partner, folder);
-    if (!allowed) return `<span class="disabled">${label}</span>`;
-    return `<a href="${this.esc(this.service.buildClientFolderUrl(client,label === 'Auditoría' ? 'Auditoria' : label))}" target="_blank" rel="noopener">${label}</a>`;
+  private refreshClientModal(): void {
+    const filters: HTMLElement | null = this.domElement.querySelector<HTMLElement>('.vgmAreaFilters');
+    const rows: HTMLElement | null = this.domElement.querySelector<HTMLElement>('[data-client-list]');
+    if (filters) filters.innerHTML = this.renderAreaFilterButtons();
+    if (rows) rows.innerHTML = this.renderClientRows();
   }
 
   private openNews(id: number): void {
@@ -278,53 +295,42 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     this.domElement.querySelectorAll<HTMLElement>('.vgmModalOverlay').forEach((element: HTMLElement) => element.classList.remove('open'));
   }
 
-  private async loadPermissions(): Promise<Permissions> {
-    const isSiteAdmin: boolean = Boolean(this.context.pageContext.legacyPageContext?.isSiteAdmin);
-    if (isSiteAdmin) {
-      return { admin: true, folders: { LEGAL: new Set<string>(), TAX: new Set<string>(), OUTSOURCING: new Set<string>(), AUDITORIA: new Set<string>() } };
-    }
-
+  private async loadMicrosoft365Birthdays(): Promise<BirthdayItem[]> {
     try {
       const client: MSGraphClientV3 = await this.context.msGraphClientFactory.getClient('3');
-      const response: { value?: Array<{ displayName?: string }> } = await client.api('/me/memberOf').select('displayName').top(999).get() as { value?: Array<{ displayName?: string }> };
-      const names: string[] = (response.value || []).map((group: { displayName?: string }) => group.displayName || '').filter(Boolean);
-      const result: Permissions = { admin: false, folders: { LEGAL: new Set<string>(), TAX: new Set<string>(), OUTSOURCING: new Set<string>(), AUDITORIA: new Set<string>() } };
-      for (const name of names) {
-        const definition = this.groupPermissions[name];
-        if (!definition) continue;
-        if (definition.admin) {
-          result.admin = true;
-          return result;
-        }
-        for (const folder of definition.folders || []) {
-          if (definition.partners === '*') result.folders[folder].add('*');
-          else for (const partner of definition.partners || []) result.folders[folder].add(partner);
-        }
-      }
-      return result;
+      const response: { value?: Array<{ displayName?: string; mail?: string; userPrincipalName?: string; department?: string; birthday?: string }> } = await client
+        .api('/users')
+        .select('displayName,mail,userPrincipalName,department,birthday')
+        .top(999)
+        .get() as { value?: Array<{ displayName?: string; mail?: string; userPrincipalName?: string; department?: string; birthday?: string }> };
+      return (response.value || []).map((user) => ({
+        name: user.displayName || '',
+        email: user.mail || user.userPrincipalName || '',
+        area: user.department || '',
+        date: user.birthday ? new Date(user.birthday) : undefined
+      })).filter((item: BirthdayItem) => Boolean(item.name && item.date && !Number.isNaN(item.date.getTime())));
     } catch (error) {
-      console.warn('VGM: Microsoft Graph no pudo resolver los grupos del usuario.', error);
-      return undefined;
+      console.info('VGM: cumpleaños Microsoft 365 no disponibles; se utilizará la lista Contactos.',error);
+      return [];
     }
   }
 
-  private hasFolderAccess(partnerText: string, folder: FolderKey): boolean {
-    if (this.permissions?.admin) return true;
-    if (!this.permissions) return false;
-    const allowed: Set<string> = this.permissions.folders[folder];
-    return this.parsePartners(partnerText).some((partner: string) => allowed.has('*') || allowed.has(partner));
+  private mergeBirthdays(graphItems: BirthdayItem[], sharePointItems: BirthdayItem[]): BirthdayItem[] {
+    const map: Map<string,BirthdayItem> = new Map<string,BirthdayItem>();
+    for (const item of graphItems) map.set(this.personKey(item),item);
+    for (const item of sharePointItems) {
+      const key: string = this.personKey(item);
+      if (!map.has(key)) map.set(key,item);
+      else {
+        const existing: BirthdayItem = map.get(key)!;
+        map.set(key,{ ...existing, email: existing.email || item.email, area: existing.area || item.area });
+      }
+    }
+    return Array.from(map.values()).filter((item: BirthdayItem) => Boolean(item.date));
   }
 
-  private hasAnyClientAccess(partnerText: string): boolean {
-    return (['LEGAL','TAX','OUTSOURCING','AUDITORIA'] as FolderKey[]).some((folder: FolderKey) => this.hasFolderAccess(partnerText,folder));
-  }
-
-  private parsePartners(value: string): string[] {
-    return this.normalize(value).toUpperCase().split(/[^A-Z]+/).filter(Boolean);
-  }
-
-  private normalize(value: string): string {
-    return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  private personKey(item: BirthdayItem): string {
+    return this.normalize(item.email || item.name);
   }
 
   private upcomingBirthdays(items: BirthdayItem[]): BirthdayItem[] {
@@ -336,6 +342,46 @@ export default class VgmIntranetWebPart extends BaseClientSideWebPart<IVgmIntran
     let next: Date = new Date(now.getFullYear(),date.getMonth(),date.getDate());
     if (next.getTime() < new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime()) next = new Date(now.getFullYear() + 1,date.getMonth(),date.getDate());
     return next;
+  }
+
+  private activityAreasText(item: VgmClientActivity): string {
+    return (['LEGAL','TAX','OUTSOURCING','AUDITORIA'] as VgmArea[])
+      .filter((area: VgmArea) => item.areas[area] > 0)
+      .map((area: VgmArea) => `${this.areaLabel(area)} ${item.areas[area]}`)
+      .join(' · ');
+  }
+
+  private areaLabel(area: VgmArea): string {
+    if (area === 'LEGAL') return 'Legal';
+    if (area === 'TAX') return 'Tax';
+    if (area === 'OUTSOURCING') return 'Outsourcing';
+    return 'Auditoría';
+  }
+
+  private fileAbbr(fileType: string): string {
+    const type: string = (fileType || '').toLowerCase();
+    if (type === 'doc' || type === 'docx') return 'W';
+    if (type === 'xls' || type === 'xlsx' || type === 'csv') return 'X';
+    if (type === 'ppt' || type === 'pptx') return 'P';
+    if (type === 'pdf') return 'PDF';
+    return type ? type.slice(0,3).toUpperCase() : 'DOC';
+  }
+
+  private relativeTime(date: Date): string {
+    const seconds: number = Math.max(0,Math.floor((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return 'Ahora';
+    const minutes: number = Math.floor(seconds / 60);
+    if (minutes < 60) return `Hace ${minutes} min`;
+    const hours: number = Math.floor(minutes / 60);
+    if (hours < 24) return `Hace ${hours} h`;
+    const days: number = Math.floor(hours / 24);
+    if (days === 1) return 'Ayer';
+    if (days < 7) return `Hace ${days} días`;
+    return date.toLocaleDateString('es-CL',{day:'numeric',month:'short'});
+  }
+
+  private normalize(value: string): string {
+    return (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   }
 
   private capitalize(value: string): string {
