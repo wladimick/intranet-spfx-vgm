@@ -1,0 +1,58 @@
+name: Build VGM Intranet SPFx
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'clientes/vgm/intranet/**'
+      - '.github/workflows/build-vgm-intranet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clientes/vgm/intranet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and package SPFx
+        run: npm run build
+
+      - name: Verify package
+        run: test -f sharepoint/solution/vgm-intranet.sppkg
+
+      - name: Upload SPFx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vgm-intranet-spfx-package
+          path: clientes/vgm/intranet/sharepoint/solution/vgm-intranet.sppkg
+          if-no-files-found: error
+
+      - name: Commit generated package
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f clientes/vgm/intranet/sharepoint/solution/vgm-intranet.sppkg
+          if git diff --cached --quiet; then
+            echo "Package unchanged"
+          else
+            git commit -m "Build VGM intranet SPFx package [skip ci]"
+            git push
+          fi
