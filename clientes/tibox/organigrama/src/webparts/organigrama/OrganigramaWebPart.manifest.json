@@ -1,0 +1,20 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "1853ad6d-a0ac-41f5-8ad2-143131c6a54a",
+  "alias": "OrganigramaWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "supportsFullBleed": true,
+  "requiresCustomScript": false,
+  "preconfiguredEntries": [
+    {
+      "groupId": "cf066440-0614-43d6-98ae-0b31cf14c7c3",
+      "group": { "default": "Other" },
+      "title": { "default": "Organigrama" },
+      "description": { "default": "Organigrama TIBOX con lupa circular interactiva" },
+      "officeFabricIconFontName": "Org",
+      "properties": {}
+    }
+  ]
+}
