@@ -1,0 +1,37 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "tibox-organigrama-client-side-solution",
+    "title": "TIBOX Organigrama",
+    "id": "71e23ec5-d576-4105-b678-d1451500ccaf",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": false,
+    "isDomainIsolated": false,
+    "developer": {
+      "name": "Tibox",
+      "websiteUrl": "https://www.tibox.cl",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.23.2"
+    },
+    "metadata": {
+      "shortDescription": { "default": "Organigrama TIBOX con lupa interactiva" },
+      "longDescription": { "default": "Web Part SPFx independiente para visualizar el organigrama corporativo con lupa circular, zoom configurable y actualización de imagen reservada a usuarios con permiso Manage Web / Control total." },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "TIBOX Organigrama Feature",
+        "description": "Componente de organigrama interactivo TIBOX",
+        "id": "8e1cb8a4-d8d3-459b-9fc2-e0f760e234d0",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/tibox-organigrama.sppkg"
+  }
+}
