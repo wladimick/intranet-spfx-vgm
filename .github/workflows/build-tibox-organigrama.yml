@@ -1,0 +1,43 @@
+name: Build TIBOX Organigrama SPFx
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'clientes/tibox/organigrama/**'
+      - '.github/workflows/build-tibox-organigrama.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clientes/tibox/organigrama
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: 'npm'
+          cache-dependency-path: clientes/tibox/organigrama/package.json
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build and package SPFx
+        run: npm run build
+
+      - name: Verify package
+        run: |
+          test -f sharepoint/solution/tibox-organigrama.sppkg
+          ls -lh sharepoint/solution/tibox-organigrama.sppkg
+
+      - name: Upload SPFx artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tibox-organigrama-spfx-package
+          path: clientes/tibox/organigrama/sharepoint/solution/tibox-organigrama.sppkg
+          if-no-files-found: error
